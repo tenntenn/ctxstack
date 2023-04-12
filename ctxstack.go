@@ -22,7 +22,15 @@ func WithDeadlineCause(parent context.Context, d time.Time, cause error) (contex
 	v := new(holder)
 	ctx = context.WithValue(ctx, ctxkey{}, v)
 
+	childCtx, childCancel := context.WithCancel(context.WithoutCancel(ctx))
+	var wg sync.WaitGroup
 	stop := context.AfterFunc(ctx, func() {
+		wg.Add(1)
+
+		defer func() {
+			childCancel()
+			wg.Done()
+		}()
 
 		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return
@@ -35,9 +43,11 @@ func WithDeadlineCause(parent context.Context, d time.Time, cause error) (contex
 		v.mu.Unlock()
 	})
 
-	return ctx, func() {
+	return childCtx, func() {
+		wg.Wait()
 		stop()
 		cancel()
+		childCancel()
 	}
 }
 
